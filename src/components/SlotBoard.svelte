@@ -3,7 +3,6 @@
   import { gsap } from 'gsap'
   import * as PIXI from 'pixi.js'
 
-  // Props using Svelte 5 runes
   interface Props {
     activated?: boolean
     rotation?: number
@@ -16,6 +15,7 @@
   let boardContainer: PIXI.Container | null = null
   let pixiApp: PIXI.Application | null = null
   let currentRotation: number = 0
+  let originalBoardY: number = 0 // Store original Y position for bounce animation
 
   // Board dimensions
   const GRID_SIZE = 5 // 5x5 grid
@@ -27,17 +27,27 @@
   const CANVAS_WIDTH = BOARD_WIDTH + 100
   const CANVAS_HEIGHT = BOARD_HEIGHT + 100
 
-  // Colors for symbols (simple color blocks)
-  const SYMBOL_COLORS = [
-    0xff6b6b, // Red
-    0x4ecdc4, // Teal
-    0x45b7d1, // Blue
-    0xf9ca24, // Yellow
-    0x6c5ce7, // Purple
-    0xa29bfe, // Light Purple
-    0xfd79a8, // Pink
-    0x00b894, // Green
-  ]
+  // Available symbols: A-Z letters
+  const SYMBOLS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
+  
+  // Cell background color: Same pink color for all cells
+  const CELL_BG_COLOR = 0xff69b4 // Pink
+  
+  // Symbol color: Gold for all characters
+  const SYMBOL_COLOR = 0xffd700 // Gold
+  
+  // Generate random symbol grid (allows duplicates)
+  function generateSymbolGrid(): string[] {
+    const grid: string[] = []
+    for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
+      // Randomly select from A-Z, allowing duplicates
+      const randomIndex = Math.floor(Math.random() * SYMBOLS.length)
+      grid.push(SYMBOLS[randomIndex])
+    }
+    return grid
+  }
+  
+  let symbolGrid = generateSymbolGrid()
 
   /**
    * Initialize the Pixi application and board container
@@ -69,6 +79,9 @@
     boardContainer.x = CANVAS_WIDTH / 2
     boardContainer.y = CANVAS_HEIGHT / 2
     
+    // Store original Y position for bounce animation
+    originalBoardY = CANVAS_HEIGHT / 2
+    
     // Create frame graphics
     const frame = new PIXI.Graphics()
     frame.lineStyle(4, 0x8b7355, 1) // Brown frame color
@@ -85,23 +98,28 @@
     for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
       const row = Math.floor(i / GRID_SIZE)
       const col = i % GRID_SIZE
-      const colorIndex = i % SYMBOL_COLORS.length
+      const symbolChar = symbolGrid[i]
       
       const symbolContainer = new PIXI.Container()
       symbolContainer.x = col * (SYMBOL_SIZE + SYMBOL_SPACING)
       symbolContainer.y = row * (SYMBOL_SIZE + SYMBOL_SPACING)
       
-      const symbol = new PIXI.Graphics()
-      symbol.beginFill(SYMBOL_COLORS[colorIndex], 1)
-      symbol.drawRoundedRect(0, 0, SYMBOL_SIZE, SYMBOL_SIZE, 4)
-      symbol.endFill()
-      symbolContainer.addChild(symbol)
+      // Dark background for symbol cell (same color for all)
+      const bg = new PIXI.Graphics()
+      bg.beginFill(CELL_BG_COLOR, 1) // Same dark grey background for all cells
+      bg.drawRoundedRect(0, 0, SYMBOL_SIZE, SYMBOL_SIZE, 4)
+      bg.endFill()
+      symbolContainer.addChild(bg)
       
-      const text = new PIXI.Text(`${row + 1},${col + 1}`, {
-        fill: 0xffffff,
-        fontSize: 12,
+      // Letter symbol with styling - all gold color
+      const textStyle = new PIXI.TextStyle({
+        fontFamily: 'Arial, sans-serif',
+        fontSize: 36,
+        fontWeight: 'bold',
+        fill: SYMBOL_COLOR, // Gold color for all characters
         align: 'center',
       })
+      const text = new PIXI.Text(symbolChar, textStyle)
       text.anchor.set(0.5)
       text.x = SYMBOL_SIZE / 2
       text.y = SYMBOL_SIZE / 2
@@ -124,46 +142,94 @@
   })
 
   /**
-   * Animate the board rotation with bounce/overshoot effect
-   * Animation phases: 0° → ~95° (overshoot) → ~87° (bounce back) → 90° (settle)
+   * Animate the board: Move up while rotating 90°, then immediately bounce back down
+   * With jelly-like elasticity: zoom out when moving up, zoom in when falling down
+   * Animation sequence:
+   * 1. Move up (+Y) + zoom out + rotate to overshoot (~95 degrees)
+   * 2. Bounce back rotation slightly (87°) while still moving up
+   * 3. Settle rotation at 90° and reach top position (still zoomed out)
+   * 4. Immediately fall back down + zoom in to original position with bounce
    */
   export function rotateBoard() {
     if (!boardContainer || !activated) return
 
-    // Create animation timeline with bounce/elastic effect
+    // Animation parameters
+    const UPWARD_MOVEMENT = -80 // Move up by 80 pixels (negative Y = up)
+    const ROTATION_OVERSHOOT = 95 // Overshoot to 95 degrees
+    const ROTATION_BOUNCE_BACK = 87 // Bounce back to 87 degrees
+    const FINAL_ROTATION = 90 // Final rotation at 90 degrees
+    const ZOOM_OUT_SCALE = 0.90 // Zoom out to 90% when moving up (jelly effect)
+    const ZOOM_IN_SCALE = 1.0 // Zoom back to 100% when falling down
+
+    // Store starting values
+    const startY = boardContainer.y
+    const startRotation = currentRotation
+    const startScale = boardContainer.scale.x || 1 // Get current scale or default to 1
+    const targetY = startY + UPWARD_MOVEMENT // Move up (negative Y = up in screen coordinates)
+
+    // Ensure scale is initialized
+    if (boardContainer.scale.x === 0 || boardContainer.scale.y === 0) {
+      boardContainer.scale.set(1, 1)
+    }
+
+    // Create animation timeline
     const timeline = gsap.timeline({
       onComplete: () => {
-        // Ensure final rotation is exactly 90 degrees (no drift)
+        // Ensure final values are correct (no drift)
         if (boardContainer) {
-          boardContainer.rotation = currentRotation * (Math.PI / 180) + Math.PI / 2
-          currentRotation = currentRotation + 90
+          boardContainer.rotation = (startRotation + FINAL_ROTATION) * (Math.PI / 180)
+          boardContainer.y = startY // Ensure final Y is correct
+          boardContainer.scale.set(ZOOM_IN_SCALE, ZOOM_IN_SCALE) // Ensure final scale is correct
+          currentRotation = startRotation + FINAL_ROTATION
         }
       }
     })
 
-    // Convert current rotation to degrees for easier tracking
-    const startRotation = currentRotation
-    
-    // Phase 1: Rotate to overshoot (~95 degrees)
-    timeline.to(boardContainer, {
-      rotation: (startRotation + 95) * (Math.PI / 180),
+    // Phase 1: Move up + Zoom out + Rotate to overshoot (~95 degrees)
+    // Jelly effect: zoom out to 90% while moving up
+    timeline.to(boardContainer.scale, {
+      x: ZOOM_OUT_SCALE,
+      y: ZOOM_OUT_SCALE,
       duration: 0.4,
       ease: 'power2.out'
     })
-
-    // Phase 2: Bounce back slightly (~87 degrees)
     timeline.to(boardContainer, {
-      rotation: (startRotation + 87) * (Math.PI / 180),
-      duration: 0.2,
+      y: targetY,
+      rotation: (startRotation + ROTATION_OVERSHOOT) * (Math.PI / 180),
+      duration: 0.4,
+      ease: 'power2.out'
+    }, '<') // Start at the same time as scale animation
+
+    // Phase 2: Bounce back rotation slightly (~87 degrees) while continuing to top
+    // Keep zoomed out during rotation bounce
+    timeline.to(boardContainer, {
+      rotation: (startRotation + ROTATION_BOUNCE_BACK) * (Math.PI / 180),
+      duration: 0.15,
       ease: 'power1.inOut'
-    })
+    }, '-=0.05') // Start slightly before previous phase ends
 
-    // Phase 3: Settle at exactly 90 degrees
+    // Phase 3: Settle rotation at exactly 90 degrees and ensure at top position
+    // Still zoomed out at top (90%)
     timeline.to(boardContainer, {
-      rotation: (startRotation + 90) * (Math.PI / 180),
-      duration: 0.3,
+      rotation: (startRotation + FINAL_ROTATION) * (Math.PI / 180),
+      y: targetY, // Ensure we're at top position
+      duration: 0.2,
       ease: 'elastic.out(1, 0.5)'
     })
+
+    // Phase 4: Immediately fall back down + zoom in to original size (100%) with bounce
+    // Jelly effect: zoom back to 100% while falling down
+    timeline.to(boardContainer.scale, {
+      x: ZOOM_IN_SCALE,
+      y: ZOOM_IN_SCALE,
+      duration: 0.5,
+      ease: 'bounce.out' // Bounce effect when landing with zoom in
+    }, '-=0.05') // Start slightly before rotation settles
+    timeline.to(boardContainer, {
+      y: startY,
+      duration: 0.5,
+      ease: 'bounce.out' // Bounce effect when landing
+    }, '<') // Start at the same time as scale animation
   }
 
   /**
