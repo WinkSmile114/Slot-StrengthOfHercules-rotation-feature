@@ -3,17 +3,12 @@
   import { gsap } from 'gsap'
   import * as PIXI from 'pixi.js'
 
-  // ============================================================================
-  // Types & Interfaces
-  // ============================================================================
   interface Props {
     activated?: boolean
     rotation?: number
   }
 
-  // ============================================================================
-  // Constants
-  // ============================================================================
+  // Board layout settings
   const BOARD_CONFIG = {
     GRID_SIZE: 5,
     SYMBOL_SIZE: 60,
@@ -22,30 +17,33 @@
     CANVAS_PADDING: 100,
   } as const
 
+  // Colors and visual stuff
   const VISUAL_CONFIG = {
-    CELL_BG_COLOR: 0xff69b4, // Pink
-    SYMBOL_COLOR: 0xffd700, // Gold
-    FRAME_COLOR: 0x8b7355, // Brown
-    FRAME_BG_COLOR: 0x2c2c2c, // Dark grey
+    CELL_BG_COLOR: 0xff69b4, // pink
+    SYMBOL_COLOR: 0xffd700, // gold
+    FRAME_COLOR: 0x8b7355, // brown border
+    FRAME_BG_COLOR: 0x2c2c2c, // dark background
     FRAME_BG_ALPHA: 0.9,
     FRAME_LINE_WIDTH: 4,
     FRAME_BORDER_RADIUS: 8,
     CELL_BORDER_RADIUS: 4,
   } as const
 
+  // Text styling
   const TEXT_CONFIG = {
     FONT_FAMILY: 'Arial, sans-serif',
     FONT_SIZE: 36,
     FONT_WEIGHT: 'bold',
   } as const
 
+  // Animation timing and values
   const ANIMATION_CONFIG = {
-    UPWARD_MOVEMENT: -80, // pixels (negative = up)
-    ROTATION_OVERSHOOT: 95, // degrees
-    ROTATION_BOUNCE_BACK: 87, // degrees
-    FINAL_ROTATION: 90, // degrees
-    ZOOM_OUT_SCALE: 0.90, // 90% of original size
-    ZOOM_IN_SCALE: 1.0, // 100% of original size
+    UPWARD_MOVEMENT: -80, // negative Y moves up
+    ROTATION_OVERSHOOT: 95, // overshoot a bit for bounce effect
+    ROTATION_BOUNCE_BACK: 87, // bounce back slightly
+    FINAL_ROTATION: 90, // end up at 90 degrees
+    ZOOM_OUT_SCALE: 0.90, // shrink to 90% when moving up
+    ZOOM_IN_SCALE: 1.0, // back to normal size
     DURATION: {
       UPWARD: 0.4,
       ROTATION_BOUNCE: 0.15,
@@ -64,9 +62,7 @@
 
   const SYMBOLS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
 
-  // ============================================================================
-  // Computed Constants
-  // ============================================================================
+  // Calculate board dimensions
   const BOARD_WIDTH =
     BOARD_CONFIG.GRID_SIZE * BOARD_CONFIG.SYMBOL_SIZE +
     (BOARD_CONFIG.GRID_SIZE - 1) * BOARD_CONFIG.SYMBOL_SPACING +
@@ -76,14 +72,9 @@
   const CANVAS_WIDTH = BOARD_WIDTH + BOARD_CONFIG.CANVAS_PADDING
   const CANVAS_HEIGHT = BOARD_HEIGHT + BOARD_CONFIG.CANVAS_PADDING
 
-  // ============================================================================
-  // Component Props
-  // ============================================================================
   let { activated = $bindable(false), rotation = $bindable(0) }: Props = $props()
 
-  // ============================================================================
-  // State
-  // ============================================================================
+  // Component state
   let canvasContainer: HTMLDivElement | null = null
   let boardContainer: PIXI.Container | null = null
   let pixiApp: PIXI.Application | null = null
@@ -91,13 +82,7 @@
   let originalBoardY: number = 0
   let symbolGrid: string[] = []
 
-  // ============================================================================
-  // Utility Functions
-  // ============================================================================
-  /**
-   * Generates a random symbol grid (5x5)
-   * @returns Array of 25 random symbols from A-Z
-   */
+  // Just fills a 5x5 grid with random letters
   function generateSymbolGrid(): string[] {
     const grid: string[] = []
     const totalCells = BOARD_CONFIG.GRID_SIZE * BOARD_CONFIG.GRID_SIZE
@@ -110,26 +95,18 @@
     return grid
   }
 
-  /**
-   * Creates a symbol cell with background and text
-   * @param symbolChar - The character to display
-   * @param x - X position
-   * @param y - Y position
-   * @returns Container with background and text
-   */
+  // Creates a single cell with pink bg and gold letter
   function createSymbolCell(symbolChar: string, x: number, y: number): PIXI.Container {
     const container = new PIXI.Container()
     container.x = x
     container.y = y
 
-    // Background
     const bg = new PIXI.Graphics()
     bg.beginFill(VISUAL_CONFIG.CELL_BG_COLOR, 1)
     bg.drawRoundedRect(0, 0, BOARD_CONFIG.SYMBOL_SIZE, BOARD_CONFIG.SYMBOL_SIZE, VISUAL_CONFIG.CELL_BORDER_RADIUS)
     bg.endFill()
     container.addChild(bg)
 
-    // Text
     const textStyle = new PIXI.TextStyle({
       fontFamily: TEXT_CONFIG.FONT_FAMILY,
       fontSize: TEXT_CONFIG.FONT_SIZE,
@@ -147,10 +124,7 @@
     return container
   }
 
-  /**
-   * Creates the board frame
-   * @returns Graphics object representing the frame
-   */
+  // Draws the board frame/border
   function createBoardFrame(): PIXI.Graphics {
     const frame = new PIXI.Graphics()
     frame.lineStyle(VISUAL_CONFIG.FRAME_LINE_WIDTH, VISUAL_CONFIG.FRAME_COLOR, 1)
@@ -160,31 +134,25 @@
     return frame
   }
 
-  /**
-   * Initializes the board container with proper pivot and positioning
-   * @returns Configured board container
-   */
+  // Sets up the main container with pivot point for rotation
   function initializeBoardContainer(): PIXI.Container {
     const container = new PIXI.Container()
 
-    // Set pivot to center for rotation
+    // Pivot needs to be at center so rotation looks right
     container.pivot.x = BOARD_WIDTH / 2
     container.pivot.y = BOARD_HEIGHT / 2
 
-    // Position at visual center
+    // Position it in the middle of the canvas
     container.x = CANVAS_WIDTH / 2
     container.y = CANVAS_HEIGHT / 2
 
-    // Store original Y for bounce animation
+    // Remember where we started for the bounce animation
     originalBoardY = CANVAS_HEIGHT / 2
 
     return container
   }
 
-  /**
-   * Creates the symbols grid container
-   * @returns Container with all symbol cells
-   */
+  // Builds the grid of symbol cells
   function createSymbolsGrid(): PIXI.Container {
     const container = new PIXI.Container()
     container.x = BOARD_CONFIG.FRAME_PADDING
@@ -207,13 +175,8 @@
     return container
   }
 
-  // ============================================================================
-  // Animation Functions
-  // ============================================================================
-  /**
-   * Creates the rotation animation timeline with jelly-like elasticity
-   * Animation: Move up (zoom out) → Rotate 90° → Fall down (zoom in) with bounce
-   */
+  // The main animation - board moves up while rotating, then bounces back down
+  // The zoom out/in gives it that jelly-like feel
   function createRotationAnimation(): gsap.core.Timeline {
     if (!boardContainer) {
       throw new Error('Board container not initialized')
@@ -227,7 +190,7 @@
     const startRotation = currentRotation
     const targetY = startY + UPWARD_MOVEMENT
 
-    // Ensure scale is initialized
+    // Make sure scale is set properly before animating
     if (boardContainer.scale.x === 0 || boardContainer.scale.y === 0) {
       boardContainer.scale.set(1, 1)
     }
@@ -235,7 +198,7 @@
     const timeline = gsap.timeline({
       onComplete: () => {
         if (boardContainer) {
-          // Ensure final values (prevent drift)
+          // Lock in final values to prevent any drift
           boardContainer.rotation = (startRotation + FINAL_ROTATION) * (Math.PI / 180)
           boardContainer.y = startY
           boardContainer.scale.set(ZOOM_IN_SCALE, ZOOM_IN_SCALE)
@@ -244,7 +207,7 @@
       },
     })
 
-    // Phase 1: Move up + Zoom out + Rotate to overshoot
+    // Move up, shrink a bit, and rotate (with overshoot)
     timeline.to(boardContainer.scale, {
       x: ZOOM_OUT_SCALE,
       y: ZOOM_OUT_SCALE,
@@ -257,16 +220,16 @@
       rotation: (startRotation + ROTATION_OVERSHOOT) * (Math.PI / 180),
       duration: UPWARD,
       ease: EASE_UPWARD,
-    }, '<') // Synchronize with scale animation
+    }, '<') // sync with scale
 
-    // Phase 2: Bounce back rotation
+    // Rotation bounces back a bit
     timeline.to(boardContainer, {
       rotation: (startRotation + ROTATION_BOUNCE_BACK) * (Math.PI / 180),
       duration: ROTATION_BOUNCE,
       ease: EASE_ROTATION_BOUNCE,
     }, '-=0.05')
 
-    // Phase 3: Settle rotation at 90°
+    // Settle at exactly 90 degrees
     timeline.to(boardContainer, {
       rotation: (startRotation + FINAL_ROTATION) * (Math.PI / 180),
       y: targetY,
@@ -274,7 +237,7 @@
       ease: EASE_ROTATION_SETTLE,
     })
 
-    // Phase 4: Fall down + Zoom in with bounce
+    // Fall back down and zoom back to normal size with bounce
     timeline.to(boardContainer.scale, {
       x: ZOOM_IN_SCALE,
       y: ZOOM_IN_SCALE,
@@ -286,17 +249,12 @@
       y: startY,
       duration: FALL_DOWN,
       ease: EASE_FALL_DOWN,
-    }, '<') // Synchronize with scale animation
+    }, '<') // sync with scale
 
     return timeline
   }
 
-  // ============================================================================
-  // Public API
-  // ============================================================================
-  /**
-   * Animates the board rotation with bounce and jelly-like elasticity
-   */
+  // Public function to trigger the rotation animation
   export function rotateBoard(): void {
     if (!boardContainer || !activated) return
 
@@ -307,9 +265,7 @@
     }
   }
 
-  /**
-   * Resets the board rotation to 0 degrees
-   */
+  // Reset everything back to starting position
   export function resetRotation(): void {
     if (!boardContainer) return
 
@@ -323,14 +279,10 @@
     })
   }
 
-  // ============================================================================
-  // Lifecycle
-  // ============================================================================
   onMount(async () => {
     if (!canvasContainer) return
 
     try {
-      // Initialize Pixi application
       pixiApp = new PIXI.Application()
       await pixiApp.init({
         width: CANVAS_WIDTH,
@@ -342,7 +294,6 @@
 
       canvasContainer.appendChild(pixiApp.canvas)
 
-      // Initialize board
       boardContainer = initializeBoardContainer()
       const frame = createBoardFrame()
       const symbolsGrid = createSymbolsGrid()
@@ -351,7 +302,6 @@
       boardContainer.addChild(symbolsGrid)
       pixiApp.stage.addChild(boardContainer)
 
-      // Initialize rotation
       currentRotation = 0
       boardContainer.rotation = currentRotation
     } catch (error) {
@@ -365,9 +315,7 @@
     }
   })
 
-  // ============================================================================
-  // Reactive Effects
-  // ============================================================================
+  // Sync rotation prop with actual board rotation
   $effect(() => {
     if (rotation !== undefined && boardContainer) {
       boardContainer.rotation = rotation * (Math.PI / 180)
